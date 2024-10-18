@@ -44,13 +44,12 @@ from asreview.config import PROJECT_MODE_SIMULATE
 from asreview.datasets import DatasetManager
 from asreview.extensions import extensions
 from asreview.extensions import load_extension
-from asreview.project import ProjectError
-from asreview.project import ProjectNotFoundError
-from asreview.project import is_project
+from asreview.project.exceptions import ProjectError
+from asreview.project.exceptions import ProjectNotFoundError
+from asreview.project.api import is_project
 from asreview.search import fuzzy_find
 from asreview.settings import ReviewSettings
 from asreview.state.contextmanager import open_state
-from asreview.state.exceptions import StateNotFoundError
 from asreview.statistics import n_duplicates
 from asreview.statistics import n_irrelevant
 from asreview.statistics import n_relevant
@@ -605,7 +604,7 @@ def api_get_labeled_stats(project):  # noqa: F401
                 "n_prior_exclusions": int(sum(data_prior["label"] == 0)),
             }
         )
-    except StateNotFoundError:
+    except FileNotFoundError:
         return jsonify(
             {
                 "n": 0,
@@ -998,7 +997,7 @@ def _get_stats(project, include_priors=False):
             labels_without_priors = s.get_results_table(priors=False)["label"]
         n_records = len(as_data)
 
-    except (StateNotFoundError, ValueError, ProjectError):
+    except (FileNotFoundError, ValueError, ProjectError):
         labels = np.array([])
         labels_without_priors = np.array([])
         n_records = 0
