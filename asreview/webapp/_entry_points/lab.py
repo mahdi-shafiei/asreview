@@ -37,7 +37,6 @@ PORT_NUMBER = os.getenv("ASREVIEW_LAB_PORT", 5000)
 
 
 def _check_port_in_use(host, port):
-    logging.info(f"Checking if host and port are available :: {host}:{port}")
     host = host.replace("https://", "").replace("http://", "")
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         return s.connect_ex((host, port)) == 0
@@ -47,7 +46,7 @@ def _check_for_update():
     """Check if there is an update available."""
 
     try:
-        r = requests.get("https://pypi.org/pypi/asreview/json")
+        r = requests.get("https://pypi.org/pypi/asreview/json", timeout=2)
         r.raise_for_status()
         latest_version = r.json()["info"]["version"]
         if latest_version != asr.__version__ and "+" not in asr.__version__:
@@ -55,7 +54,7 @@ def _check_for_update():
 
         return False, latest_version
     except Exception:
-        pass
+        return False, None
 
 
 def _wait_for_server(host, port, timeout=60):
@@ -108,9 +107,12 @@ def lab_entry_point(argv):
     mark_deprecated_help_strings(parser)
     args = parser.parse_args(argv)
 
-    # check for update
-    if not args.skip_update_check:
-        _check_for_update()
+    # Set logging level based on verbosity
+    verbosity = getattr(args, "verbose", 0)
+    if verbosity == 1:
+        logging.basicConfig(level=logging.INFO)
+    elif verbosity >= 2:
+        logging.basicConfig(level=logging.DEBUG)
 
     app = create_app(
         config_path=args.config_path,
@@ -141,6 +143,7 @@ def lab_entry_point(argv):
     port = args.port
     original_port = port
     while _check_port_in_use(args.host, port) is True:
+        logging.debug(f"Address is not available :: {args.host}:{port}")
         port = int(port) + 1
         if port - original_port >= args.port_retries:
             raise ConnectionError(
@@ -207,7 +210,7 @@ def lab_entry_point(argv):
             app.config.get("TASK_MANAGER_PORT", None),
             start_event,
             shutdown_event,
-            app.config.get("TASK_MANAGER_VERBOSE", False),
+            getattr(args, "verbose", 0),
         ),
     )
     process.start()
@@ -217,7 +220,7 @@ def lab_entry_point(argv):
         start_time = time.time()
         while not start_event.is_set():
             time.sleep(0.1)
-            if time.time() - start_time > 5:
+            if time.time() - start_time > 10:
                 console.print(
                     "\n\n[red]Error: unable to startup the task server.[/red]\n\n"
                 )
@@ -235,11 +238,9 @@ def lab_entry_point(argv):
 
     finally:
         if process.is_alive():
-            console.print(
-                "Waiting for background task manager to shut down gracefully..."
-            )
+            console.print("ASReview LAB is shutting down...\n")
             process.join(timeout=10)
-            console.print("Background task manager shut down gracefully.\n\n")
+            console.print("ASReview LAB shut down.\n\n")
 
         if process.is_alive():
             # If it didn't shut down gracefully, terminate it forcefully
@@ -339,6 +340,15 @@ def _lab_parser():
         dest="skip_update_check",
         action="store_true",
         help="Skip checking for updates.",
+    )
+
+    # Add verbosity argument
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="count",
+        default=0,
+        help="Increase output verbosity. -v for INFO, -vv for DEBUG.",
     )
 
     return parser
